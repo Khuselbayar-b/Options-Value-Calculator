@@ -1,0 +1,38 @@
+/* styles.css */
+
+body {
+    font-family: Arial, sans-serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+#input-section {
+    margin-bottom: 20px;
+}
+
+#input-section input,
+#input-section select,
+#input-section button {
+    margin-right: 10px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: left;
+}
+
+th {
+    background-color: #f2f2f2;
+}
+
+#heat-map {
+    margin-top: 20px;
+}

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Option Contract Value Calculator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div id="app">
+        <h1>Option Contract Value Calculator</h1>
+
+        <div id="input-section">
+            <input type="text" id="stock-symbol" placeholder="Enter stock symbol">
+            <select id="option-type">
+                <option value="call">Call Option</option>
+                <option value="put">Put Option</option>
+            </select>
+            <input type="date" id="option-date">
+            <button id="fetch-data">Fetch Data</button>
+        </div>
+
+        <div id="options-table"></div>
+
+        <div id="selected-option">
+            <h2>Selected Option</h2>
+            <p id="selected-option-info"></p>
+        </div>
+
+        <div id="heat-map"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script type="module" src="config.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>
