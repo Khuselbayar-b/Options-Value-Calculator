@@ -13,34 +13,66 @@ fetchDataButton.addEventListener('click', () => {
     fetchOptionData();
 });
 
+// Define a cache object at the top of your file
+const optionsCache = {};
+
 async function fetchOptionData() {
     const symbol = stockSymbolInput.value.toUpperCase();
     const optionType = optionTypeSelect.value.toLowerCase();
     const selectedDate = optionDateInput.value;
-
+    
     try {
         // Fetch current stock price
         const quoteResponse = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`);
         const quoteData = await quoteResponse.json();
         const currentPrice = parseFloat(quoteData['Global Quote']['05. price']);
         
-        // Fetch options data
-        const optionsResponse = await fetch(`https://www.alphavantage.co/query?function=HISTORICAL_OPTIONS&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`);
-        const optionsData = await optionsResponse.json();
+        let optionsData;
+        
+        // Check if we have cached data for this symbol
+        if (optionsCache[symbol] && optionsCache[symbol].timestamp > Date.now() - 24 * 60 * 60 * 1000) {
+            console.log('Using cached options data');
+            optionsData = optionsCache[symbol].data;
+        } else {
+            // Fetch options data
+            const optionsResponse = await fetch(`https://www.alphavantage.co/query?function=HISTORICAL_OPTIONS&symbol=${symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`);
+            const fetchedOptionsData = await optionsResponse.json();
+            
+            // Check if the fetched data is valid
+            if (fetchedOptionsData.data && Array.isArray(fetchedOptionsData.data)) {
+                optionsData = fetchedOptionsData.data;
+                
+                // Cache the valid options data
+                optionsCache[symbol] = {
+                    data: optionsData,
+                    timestamp: Date.now()
+                };
+                console.log('Caching new options data');
+            } else {
+                console.log('Fetched data is invalid, using cached data if available');
+                optionsData = optionsCache[symbol] ? optionsCache[symbol].data : null;
+            }
+        }
+        
         // Display the options table
-        displayOptionsTable(optionsData.data, currentPrice, optionType, selectedDate);
+        if (optionsData) {
+            displayOptionsTable(optionsData, currentPrice, optionType, selectedDate);
+        } else {
+            console.error('No valid options data available');
+            // You might want to display an error message to the user here
+        }
         
     } catch (error) {
         console.error('Error fetching option data:', error);
+        // You might want to display an error message to the user here
     }
 }
 
 function displayOptionsTable(optionsData, currentPrice, optionType, selectedDate) {
     // Filter options based on type, date, and strike price increment
-    console.log(optionsData)
     const filteredOptions = optionsData.filter(option => 
         option.type.toLowerCase() === optionType &&
-        option.date === selectedDate &&
+        option.expiration === selectedDate &&
         parseFloat(option.strike) % 5 === 0
     );
     // Group options by strike price and select the one with the highest volume for each group
@@ -56,7 +88,7 @@ function displayOptionsTable(optionsData, currentPrice, optionType, selectedDate
     const highestVolumeOptions = Object.values(groupedOptions);
     highestVolumeOptions.sort((a, b) => parseFloat(a.strike) - parseFloat(b.strike));
     // Generate table HTML
-    /*
+    
     let tableHTML = `
         <h3>Current Stock Price: $${currentPrice.toFixed(2)}</h3>
         <table>
@@ -65,6 +97,7 @@ function displayOptionsTable(optionsData, currentPrice, optionType, selectedDate
                 <th>Bid</th>
                 <th>Ask</th>
                 <th>Middle</th>
+                <th>Date</th>
                 <th>Action</th>
             </tr>
     `;
@@ -73,14 +106,14 @@ function displayOptionsTable(optionsData, currentPrice, optionType, selectedDate
         const bid = parseFloat(option.bid);
         const ask = parseFloat(option.ask);
         const middle = ((bid + ask) / 2).toFixed(2);
-        const date = parseFloat(option.date);
-        console.log(date)
+        const date = option.expiration;
         tableHTML += `
             <tr>
                 <td>$${parseFloat(option.strike).toFixed(2)}</td>
                 <td>$${bid.toFixed(2)}</td>
                 <td>$${ask.toFixed(2)}</td>
                 <td>$${middle}</td>
+                <td>${date}</td>
                 <td><button class="select-option" data-option='${JSON.stringify(option)}' data-current-price="${currentPrice}">Select</button></td>
             <tr>
         `;
@@ -95,21 +128,24 @@ function displayOptionsTable(optionsData, currentPrice, optionType, selectedDate
         selectOption(option, currentPrice);
     }
     });
-    */
+    
 }
 
 function selectOption(option, currentPrice) {
-    selectedOptionInfo.textContent = `Strike: $${option.strike}, Expiration: ${option.expiration}, At Stock Price: $${currentPrice}`;
-    const values = calculateOptionValues(option, currentPrice);
+    const bid = parseFloat(option.bid);
+    const ask = parseFloat(option.ask);
+    const middle = ((bid + ask) / 2).toFixed(2);
+    selectedOptionInfo.textContent = `Strike: $${option.strike}, Expiration: ${option.expiration},  At Option Price: $${middle}, At Stock Price: $${currentPrice}`;
+    const values = calculateOptionValues(option, currentPrice, middle);
     createHeatmapTable(values, option.symbol);
 }
 
 function createHeatmapTable(values, symbol) {
     // Group values by date and price
-    const groupedValues = values.reduce((acc, { date, price, value }) => {
+    const groupedValues = values.reduce((acc, { date, price, value, percent_change }) => {
         const dateString = date.toISOString().split('T')[0];
         if (!acc[dateString]) acc[dateString] = {};
-        acc[dateString][price.toFixed(2)] = value;
+        acc[dateString][price.toFixed(2)] = { value, percent_change };
         return acc;
     }, {});
 
@@ -125,14 +161,35 @@ function createHeatmapTable(values, symbol) {
     });
     tableHTML += `</tr>`;
 
+    // Function to get color based on percent change
+    const getColor = (percentChange) => {
+        if (percentChange === 0) return 'rgb(255, 255, 255)';  // White for 0
+        if (percentChange > 0) {
+            const intensity = Math.min(percentChange / 100, 1);  // Cap at 100%
+            return `rgb(${Math.round(255 * (1 - intensity))}, 255, ${Math.round(255 * (1 - intensity))})`;
+        } else {
+            const intensity = Math.min(Math.abs(percentChange) / 100, 1);  // Cap at -100%
+            return `rgb(255, ${Math.round(255 * (1 - intensity))}, ${Math.round(255 * (1 - intensity))})`;
+        }
+    };
+
     // Data rows
     prices.forEach(price => {
         tableHTML += `<tr><td>$${price}</td>`;
         dates.forEach(date => {
-            const value = groupedValues[date][price] || '';
-            const normalizedValue = value ? (value - Math.min(...values.map(v => v.value))) / (Math.max(...values.map(v => v.value)) - Math.min(...values.map(v => v.value))) : 0;
-            const backgroundColor = `hsl(240, 100%, ${100 - normalizedValue * 50}%)`;
-            tableHTML += `<td style="background-color: ${backgroundColor}">${value.toFixed(2)}</td>`;
+            const data = groupedValues[date][price];
+            let cellContent = '';
+            let backgroundColor = '';
+
+            if (data && typeof data.percent_change === 'number' && !isNaN(data.percent_change)) {
+                backgroundColor = getColor(data.percent_change);
+                cellContent = data.percent_change.toFixed(2) + '%';
+            } else {
+                cellContent = 'N/A';
+                backgroundColor = '#f2f2f2'; // Light grey for missing/invalid data
+            }
+
+            tableHTML += `<td style="background-color: ${backgroundColor}">${cellContent}</td>`;
         });
         tableHTML += `</tr>`;
     });
@@ -162,12 +219,15 @@ function createHeatmapTable(values, symbol) {
         .heatmap th {
             background-color: #f2f2f2;
         }
+        .heatmap td {
+            color: black; /* Ensure text is always visible */
+        }
     `;
     document.head.appendChild(style);
 }
 
 
-function calculateOptionValues(option, currentPrice) {
+function calculateOptionValues(option, currentPrice, optionPrice) {
     const values = [];
     const currentDate = new Date();
     const expirationDate = new Date(option.expiration);
@@ -188,10 +248,12 @@ function calculateOptionValues(option, currentPrice) {
                 0.3,  // volatility
                 option.type
             );
+            const percent_change = ((value - optionPrice) / optionPrice) * 100
             values.push({
                 date: new Date(date),
                 price: price,
-                value: value
+                value: value,
+                percent_change: percent_change
             });
         }
     }
